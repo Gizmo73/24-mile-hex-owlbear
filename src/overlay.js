@@ -16,6 +16,10 @@ const MAX_ITEMS = 4000;
 
 export const DEFAULTS = {
   enabled: false,
+  // Empty means "use every map image in the scene". Otherwise these item ids
+  // define the extent, so a scene holding several maps can be overlaid on just
+  // the ones you choose rather than on their combined bounding box.
+  boundsItemIds: [],
   hexesAcross: 8, // 24-mile hexes over a 3-mile grid
   strokeColor: "#FFCC00",
   strokeWidth: 8,

@@ -48,6 +48,9 @@ function readSettings(metadata) {
     strokeWidth: clamp(Math.round(Number(merged.strokeWidth) || DEFAULTS.strokeWidth), 1, 30),
     offsetX: clamp(Number(merged.offsetX) || 0, -HEXES_ACROSS_MAX, HEXES_ACROSS_MAX),
     offsetY: clamp(Number(merged.offsetY) || 0, -HEXES_ACROSS_MAX, HEXES_ACROSS_MAX),
+    boundsItemIds: Array.isArray(merged.boundsItemIds)
+      ? merged.boundsItemIds.filter((id) => typeof id === "string").slice(0, 200)
+      : [],
   };
 }
 
@@ -61,7 +64,11 @@ const SETTING_FIELDS = [
 ];
 
 function sameSettings(a, b) {
-  return SETTING_FIELDS.every((field) => a[field] === b[field]);
+  return (
+    SETTING_FIELDS.every((field) => a[field] === b[field]) &&
+    a.boundsItemIds.length === b.boundsItemIds.length &&
+    a.boundsItemIds.every((id, i) => id === b.boundsItemIds[i])
+  );
 }
 
 const writeSettings = debounce(async () => {
@@ -96,18 +103,49 @@ async function deleteOverlayItems(items) {
   }
 }
 
+/** True when the pinned extent items have gone missing and we fell back. */
+let extentMissing = false;
+
+function usableBounds(bounds) {
+  return (
+    bounds &&
+    Number.isFinite(bounds.min?.x) &&
+    Number.isFinite(bounds.max?.y) &&
+    bounds.width > 0 &&
+    bounds.height > 0
+  );
+}
+
 async function resolveBounds() {
+  // A scene can hold several maps. When the GM has pinned a set of items, the
+  // overlay covers only those rather than the union of every map, which would
+  // otherwise stretch across the empty canvas between them.
+  if (settings.boundsItemIds.length > 0) {
+    const alive = (await OBR.scene.items.getItems(settings.boundsItemIds)).filter(
+      (item) => item.metadata?.[OVERLAY_KEY] !== true,
+    );
+    if (alive.length > 0) {
+      try {
+        const bounds = await OBR.scene.items.getItemBounds(alive.map((i) => i.id));
+        if (usableBounds(bounds)) {
+          extentMissing = false;
+          return bounds;
+        }
+      } catch (err) {
+        console.warn("[travel-day-hex] could not measure the pinned extent", err);
+      }
+    }
+    // Pinned items were deleted; fall back rather than drawing nothing.
+    extentMissing = true;
+  } else {
+    extentMissing = false;
+  }
+
   const mapItems = await OBR.scene.items.getItems((item) => item.layer === "MAP");
   if (mapItems.length > 0) {
     try {
       const bounds = await OBR.scene.items.getItemBounds(mapItems.map((i) => i.id));
-      const usable =
-        bounds &&
-        Number.isFinite(bounds.min?.x) &&
-        Number.isFinite(bounds.max?.y) &&
-        bounds.width > 0 &&
-        bounds.height > 0;
-      if (usable) return bounds;
+      if (usableBounds(bounds)) return bounds;
     } catch (err) {
       console.warn("[travel-day-hex] falling back to a fixed extent", err);
     }
@@ -176,6 +214,8 @@ async function redraw() {
       redrawQueued = false;
       await drawOnce();
     } while (redrawQueued);
+    // drawOnce may have discovered the pinned extent items are gone.
+    syncStatus();
   } catch (err) {
     console.error("[travel-day-hex] redraw failed", err);
   } finally {
@@ -212,17 +252,58 @@ function syncInputs() {
   }
 
   el("strokeWidthVal").textContent = settings.strokeWidth;
+
+  const pinned = settings.boundsItemIds.length;
+  el("extentHint").textContent = pinned === 0
+    ? "All map images"
+    : `${pinned} selected item${pinned === 1 ? "" : "s"}`;
+  el("extentAll").disabled = pinned === 0;
 }
 
-let statusTimer;
+let statusTimer = null;
 
-/** Show a transient message, then fall back to the standing status text. */
+/**
+ * Show a transient message, then fall back to the standing status text. While
+ * one is showing, syncStatus() leaves it alone, so the redraw it usually
+ * accompanies cannot wipe it a fraction of a second later.
+ */
 function flashStatus(text, warn = false) {
   const status = el("status");
   status.className = warn ? "warn" : "";
   status.textContent = text;
   clearTimeout(statusTimer);
-  statusTimer = setTimeout(syncStatus, 2600);
+  statusTimer = setTimeout(() => {
+    statusTimer = null;
+    syncStatus();
+  }, 2600);
+}
+
+/** The current selection, minus our own hexes. Null if nothing usable. */
+async function readSelection() {
+  const selection = await OBR.player.getSelection();
+  if (!selection || selection.length === 0) {
+    flashStatus("Select something on the map first.", true);
+    return null;
+  }
+  const picked = (await OBR.scene.items.getItems(selection)).filter(
+    (item) => item.metadata?.[OVERLAY_KEY] !== true,
+  );
+  if (picked.length === 0) {
+    flashStatus("Select something other than the overlay itself.", true);
+    return null;
+  }
+  return picked;
+}
+
+/** Pin the overlay's extent to the selected items. */
+async function limitExtentToSelection() {
+  if (role !== "GM") return;
+  const picked = await readSelection();
+  if (!picked) return;
+  update({ boundsItemIds: picked.map((item) => item.id) });
+  flashStatus(
+    `Extent limited to ${picked.length} selected item${picked.length === 1 ? "" : "s"}.`,
+  );
 }
 
 /**
@@ -234,20 +315,8 @@ async function alignToSelection() {
   if (role !== "GM") return;
   if (!isHexGrid(gridType)) return;
 
-  const selection = await OBR.player.getSelection();
-  if (!selection || selection.length === 0) {
-    flashStatus("Select a token on the map first, then align to it.", true);
-    return;
-  }
-
-  // Never align to our own hexes, even if one somehow gets selected.
-  const picked = (await OBR.scene.items.getItems(selection)).filter(
-    (item) => item.metadata?.[OVERLAY_KEY] !== true,
-  );
-  if (picked.length === 0) {
-    flashStatus("Select something other than the overlay itself.", true);
-    return;
-  }
+  const picked = await readSelection();
+  if (!picked) return;
 
   let bounds;
   try {
@@ -271,6 +340,8 @@ async function alignToSelection() {
 function syncStatus() {
   const status = el("status");
   document.body.classList.toggle("readonly", role !== "GM");
+  // Never talk over a transient message.
+  if (statusTimer) return;
 
   if (!sceneReady) {
     status.className = "";
@@ -288,6 +359,12 @@ function syncStatus() {
   if (role !== "GM") {
     status.className = "";
     status.textContent = "You can see the overlay, but only the GM can change it.";
+    return;
+  }
+  if (extentMissing) {
+    status.className = "warn";
+    status.textContent =
+      "The items the extent was pinned to are gone. Showing all maps instead.";
     return;
   }
   status.className = "";
@@ -346,6 +423,14 @@ function bindInputs() {
       console.error("[travel-day-hex] align failed", err),
     );
   });
+
+  el("extentSelection").addEventListener("click", () => {
+    limitExtentToSelection().catch((err) =>
+      console.error("[travel-day-hex] extent change failed", err),
+    );
+  });
+
+  el("extentAll").addEventListener("click", () => update({ boundsItemIds: [] }));
 }
 
 function applyTheme(theme) {

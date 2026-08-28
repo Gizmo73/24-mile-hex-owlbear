@@ -51,6 +51,19 @@ Three ways to line the big hexes up with your map, in increasing order of precis
    bounds centre is already snapped to a hex centre, so this places a big-hex
    centre exactly there. Selecting several items aligns to the centre of the lot.
 
+### Extent
+
+By default the overlay covers every map image in the scene, plus one hex of
+margin. If a scene holds several maps, that is their *combined* bounding box, so
+two maps in opposite corners produce a huge box with hexes drawn across the empty
+canvas between them.
+
+To cover only some of them, select the maps you want and click *Limit to selected
+maps*. The choice is stored as item ids, so the extent follows those maps if you
+move or resize them. *All maps* returns to the default. If the pinned items are
+later deleted the overlay falls back to all maps and says so, rather than
+silently drawing nothing.
+
 ## Notes
 
 - **Overlay edges cut through small hexes.** That is unavoidable geometry, not a bug.

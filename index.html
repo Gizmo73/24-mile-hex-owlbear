@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Travel Day Hex</title>
+    <link rel="icon" href="./icon.svg" />
+    <style>
+      /* Defaults for before OBR.theme reports in, and for a light host.
+         applyTheme() overrides these at runtime inside Owlbear. */
+      :root {
+        --text: #14141c;
+        --text-dim: rgba(0, 0, 0, 0.6);
+        --accent: #7c5cff;
+        --border: rgba(0, 0, 0, 0.16);
+        /* Neutral grey alphas read correctly on a light or a dark host. */
+        --surface: rgba(127, 127, 127, 0.16);
+        --surface-hover: rgba(127, 127, 127, 0.3);
+        --warn-bg: rgba(200, 130, 0, 0.16);
+        --warn-text: #8a5a00;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text: #ffffff;
+          --text-dim: rgba(255, 255, 255, 0.7);
+          --accent: #bb99ff;
+          --border: rgba(255, 255, 255, 0.16);
+          --warn-text: #ffcc66;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--text);
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        font-size: 13px;
+      }
+      body { padding: 12px 14px 16px; }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 30px;
+      }
+      .row + .row { margin-top: 6px; }
+      label { color: var(--text); user-select: none; }
+      .hint { color: var(--text-dim); font-size: 11px; margin-top: 1px; }
+      hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 10px 0;
+      }
+      input[type="number"] {
+        width: 62px;
+        padding: 4px 6px;
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font: inherit;
+      }
+      input[type="color"] {
+        width: 46px;
+        height: 26px;
+        padding: 0;
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      input[type="range"] {
+        width: 132px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      input[type="checkbox"] {
+        width: 17px;
+        height: 17px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+      .val {
+        display: inline-block;
+        min-width: 30px;
+        text-align: right;
+        color: var(--text-dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .nudge { display: flex; align-items: center; gap: 6px; }
+      .nudge span { color: var(--text-dim); width: 9px; }
+      .nudge input[type="range"] { width: 104px; }
+      button.reset {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 3px 9px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.reset:hover { background: var(--surface-hover); }
+      #status {
+        margin-top: 10px;
+        padding: 7px 9px;
+        border-radius: 4px;
+        background: var(--surface);
+        color: var(--text-dim);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      #status.warn {
+        background: var(--warn-bg);
+        color: var(--warn-text);
+      }
+      #status:empty { display: none; }
+      body.readonly .controls { opacity: 0.55; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div class="controls">
+      <div class="row">
+        <label for="enabled">Show overlay</label>
+        <input type="checkbox" id="enabled" />
+      </div>
+
+      <hr />
+
+      <div class="row">
+        <div>
+          <label for="hexesAcross">Hexes across</label>
+          <div class="hint">Small hexes per big hex</div>
+        </div>
+        <input type="number" id="hexesAcross" min="2" max="50" step="1" value="8" />
+      </div>
+
+      <div class="row">
+        <label for="strokeColor">Colour</label>
+        <input type="color" id="strokeColor" value="#FFCC00" />
+      </div>
+
+      <div class="row">
+        <label for="strokeWidth">Line weight</label>
+        <span class="nudge">
+          <input type="range" id="strokeWidth" min="1" max="30" step="1" value="8" />
+          <span class="val" id="strokeWidthVal">8</span>
+        </span>
+      </div>
+
+      <hr />
+
+      <div class="row">
+        <div>
+          <label>Origin nudge</label>
+          <div class="hint">In grid cells</div>
+        </div>
+        <button class="reset" id="resetNudge" type="button">Reset</button>
+      </div>
+      <div class="row">
+        <span class="nudge">
+          <span>X</span>
+          <input type="range" id="offsetX" min="-3" max="3" step="0.05" value="0" />
+          <span class="val" id="offsetXVal">0.00</span>
+        </span>
+      </div>
+      <div class="row">
+        <span class="nudge">
+          <span>Y</span>
+          <input type="range" id="offsetY" min="-3" max="3" step="0.05" value="0" />
+          <span class="val" id="offsetYVal">0.00</span>
+        </span>
+      </div>
+    </div>
+
+    <div id="status"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

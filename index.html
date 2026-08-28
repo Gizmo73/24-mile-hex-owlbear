@@ -108,6 +108,32 @@
       .nudge { display: flex; align-items: center; gap: 6px; }
       .nudge span { color: var(--text-dim); width: 9px; }
       .nudge input[type="range"] { width: 104px; }
+      .nudge-row { gap: 8px; }
+      .nudge-row .axis {
+        color: var(--text-dim);
+        width: 10px;
+        flex: none;
+      }
+      .nudge-row input[type="range"] { flex: 1; min-width: 0; width: auto; }
+      .nudge-row input[type="number"] { width: 66px; flex: none; }
+      button.align {
+        display: block;
+        width: 100%;
+        margin-top: 8px;
+        background: none;
+        color: var(--accent);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 7px 10px;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      button.align:hover { background: var(--surface); }
+      .align-hint { margin-top: 6px; }
       button.reset {
         background: none;
         color: var(--accent);
@@ -178,19 +204,22 @@
         </div>
         <button class="reset" id="resetNudge" type="button">Reset</button>
       </div>
-      <div class="row">
-        <span class="nudge">
-          <span>X</span>
-          <input type="range" id="offsetX" min="-3" max="3" step="0.05" value="0" />
-          <span class="val" id="offsetXVal">0.00</span>
-        </span>
+      <div class="row nudge-row">
+        <span class="axis">X</span>
+        <input type="range" id="offsetX" min="-8" max="8" step="0.01" value="0" />
+        <input type="number" id="offsetXNum" step="0.01" value="0.00" />
       </div>
-      <div class="row">
-        <span class="nudge">
-          <span>Y</span>
-          <input type="range" id="offsetY" min="-3" max="3" step="0.05" value="0" />
-          <span class="val" id="offsetYVal">0.00</span>
-        </span>
+      <div class="row nudge-row">
+        <span class="axis">Y</span>
+        <input type="range" id="offsetY" min="-8" max="8" step="0.01" value="0" />
+        <input type="number" id="offsetYNum" step="0.01" value="0.00" />
+      </div>
+      <button class="align" id="alignSelection" type="button">
+        Align to selected item
+      </button>
+      <div class="hint align-hint">
+        Put a token on the hex you want at the centre of a big hex, select it,
+        then align.
       </div>
     </div>
 

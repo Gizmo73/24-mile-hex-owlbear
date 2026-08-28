@@ -36,7 +36,20 @@ Settings live in scene metadata, so each map remembers its own overlay.
 | Hexes across | 8 | Small hexes per big hex. 8 gives 24 miles over a 3-mile grid |
 | Colour | `#FFCC00` | Stroke colour |
 | Line weight | 3x the scene's grid line width | Stroke width, 1&ndash;30 |
-| Origin nudge X / Y | 0 | Shifts the overlay, measured in grid cells so it survives a DPI change |
+| Origin nudge X / Y | 0 | Shifts the overlay, measured in grid cells so it survives a DPI change. Drag the slider, type an exact value, or align to a selected item |
+
+### Aligning the overlay
+
+Three ways to line the big hexes up with your map, in increasing order of precision:
+
+1. **Drag the X / Y sliders.** The range scales with "hexes across", because a
+   point can sit up to one overlay circumradius (`hexesAcross / sqrt(3)` cells)
+   from the nearest big-hex centre.
+2. **Type an exact value** into the box beside either slider.
+3. **Align to a selected item.** Put a token on the small hex you want at the
+   centre of a big hex, select it, and click *Align to selected item*. A token's
+   bounds centre is already snapped to a hex centre, so this places a big-hex
+   centre exactly there. Selecting several items aligns to the centre of the lot.
 
 ## Notes
 

@@ -8,6 +8,7 @@ import {
   buildOverlayItems,
   fallbackBounds,
   isHexGrid,
+  offsetToCentreOn,
 } from "./overlay.js";
 
 const el = (id) => document.getElementById(id);
@@ -45,8 +46,8 @@ function readSettings(metadata) {
       ? merged.strokeColor
       : DEFAULTS.strokeColor,
     strokeWidth: clamp(Math.round(Number(merged.strokeWidth) || DEFAULTS.strokeWidth), 1, 30),
-    offsetX: clamp(Number(merged.offsetX) || 0, -3, 3),
-    offsetY: clamp(Number(merged.offsetY) || 0, -3, 3),
+    offsetX: clamp(Number(merged.offsetX) || 0, -HEXES_ACROSS_MAX, HEXES_ACROSS_MAX),
+    offsetY: clamp(Number(merged.offsetY) || 0, -HEXES_ACROSS_MAX, HEXES_ACROSS_MAX),
   };
 }
 
@@ -198,12 +199,73 @@ function syncInputs() {
   set(el("hexesAcross"), settings.hexesAcross);
   set(el("strokeColor"), settings.strokeColor);
   set(el("strokeWidth"), settings.strokeWidth);
-  set(el("offsetX"), settings.offsetX);
-  set(el("offsetY"), settings.offsetY);
+  // A point can sit up to one circumradius from the nearest hex centre, which
+  // is hexesAcross / sqrt(3) cells, so the slider has to reach at least that
+  // far or some alignments simply cannot be expressed.
+  const range = Math.max(3, settings.hexesAcross);
+  for (const axis of ["offsetX", "offsetY"]) {
+    const slider = el(axis);
+    slider.min = -range;
+    slider.max = range;
+    set(slider, settings[axis]);
+    set(el(`${axis}Num`), settings[axis].toFixed(2));
+  }
 
   el("strokeWidthVal").textContent = settings.strokeWidth;
-  el("offsetXVal").textContent = settings.offsetX.toFixed(2);
-  el("offsetYVal").textContent = settings.offsetY.toFixed(2);
+}
+
+let statusTimer;
+
+/** Show a transient message, then fall back to the standing status text. */
+function flashStatus(text, warn = false) {
+  const status = el("status");
+  status.className = warn ? "warn" : "";
+  status.textContent = text;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(syncStatus, 2600);
+}
+
+/**
+ * Align the overlay to whatever is selected. A token's bounds centre is already
+ * snapped to a hex centre, so selecting one is a way of picking a snapped point
+ * without needing a custom map tool.
+ */
+async function alignToSelection() {
+  if (role !== "GM") return;
+  if (!isHexGrid(gridType)) return;
+
+  const selection = await OBR.player.getSelection();
+  if (!selection || selection.length === 0) {
+    flashStatus("Select a token on the map first, then align to it.", true);
+    return;
+  }
+
+  // Never align to our own hexes, even if one somehow gets selected.
+  const picked = (await OBR.scene.items.getItems(selection)).filter(
+    (item) => item.metadata?.[OVERLAY_KEY] !== true,
+  );
+  if (picked.length === 0) {
+    flashStatus("Select something other than the overlay itself.", true);
+    return;
+  }
+
+  let bounds;
+  try {
+    bounds = await OBR.scene.items.getItemBounds(picked.map((item) => item.id));
+  } catch (err) {
+    console.error("[travel-day-hex] could not measure the selection", err);
+    flashStatus("Could not measure that selection.", true);
+    return;
+  }
+
+  // Keep full precision: the number inputs round only for display.
+  const offset = offsetToCentreOn(bounds.center, dpi, settings.hexesAcross, gridType);
+  update({ offsetX: offset.x, offsetY: offset.y });
+  flashStatus(
+    picked.length === 1
+      ? "Aligned to the selected item."
+      : `Aligned to the centre of ${picked.length} selected items.`,
+  );
 }
 
 function syncStatus() {
@@ -259,12 +321,31 @@ function bindInputs() {
   for (const axis of ["offsetX", "offsetY"]) {
     el(axis).addEventListener("input", (e) => {
       const value = Number(e.target.value);
-      el(`${axis}Val`).textContent = value.toFixed(2);
+      el(`${axis}Num`).value = value.toFixed(2);
+      update({ [axis]: value });
+    });
+
+    // Typed entry, for when the slider is not fine enough. Commit on change
+    // rather than input so a half-typed number never redraws.
+    el(`${axis}Num`).addEventListener("change", (e) => {
+      const value = clamp(
+        Number(e.target.value) || 0,
+        -HEXES_ACROSS_MAX,
+        HEXES_ACROSS_MAX,
+      );
+      e.target.value = value.toFixed(2);
+      el(axis).value = value;
       update({ [axis]: value });
     });
   }
 
   el("resetNudge").addEventListener("click", () => update({ offsetX: 0, offsetY: 0 }));
+
+  el("alignSelection").addEventListener("click", () => {
+    alignToSelection().catch((err) =>
+      console.error("[travel-day-hex] align failed", err),
+    );
+  });
 }
 
 function applyTheme(theme) {

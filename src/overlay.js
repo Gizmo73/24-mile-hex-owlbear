@@ -73,6 +73,51 @@ export function pixelToAxial(x, y, radius, gridType) {
   };
 }
 
+/**
+ * Round fractional axial coordinates to the nearest whole hex.
+ *
+ * Rounding q and r independently picks the wrong hex near cell edges, so this
+ * rounds in cube space and rebuilds whichever axis drifted furthest.
+ */
+export function axialRound(q, r) {
+  const x = q;
+  const z = r;
+  const y = -x - z;
+
+  let rx = Math.round(x);
+  let ry = Math.round(y);
+  let rz = Math.round(z);
+
+  const dx = Math.abs(rx - x);
+  const dy = Math.abs(ry - y);
+  const dz = Math.abs(rz - z);
+
+  if (dx > dy && dx > dz) rx = -ry - rz;
+  else if (dy > dz) ry = -rx - rz;
+  else rz = -rx - ry;
+
+  return { q: rx, r: rz };
+}
+
+/**
+ * The origin nudge that puts an overlay hex centre exactly on `point`.
+ *
+ * Finds the nearest hex of the un-nudged lattice and returns the gap to the
+ * chosen point, so the result is always the smallest nudge that lands the
+ * alignment: at most half the centre spacing, or hexesAcross / 2 cells.
+ * Returned in grid cells to match how the offset is stored.
+ */
+export function offsetToCentreOn(point, dpi, hexesAcross, gridType) {
+  const radius = cellRadius(dpi) * hexesAcross;
+  const fractional = pixelToAxial(point.x, point.y, radius, gridType);
+  const { q, r } = axialRound(fractional.q, fractional.r);
+  const centre = axialToPixel(q, r, radius, gridType);
+  return {
+    x: (point.x - centre.x) / dpi,
+    y: (point.y - centre.y) / dpi,
+  };
+}
+
 /** The six corners of a hex centred on the origin, in draw order. */
 export function hexCorners(radius, gridType) {
   // Flat-top has a corner at 0 degrees; pointy-top is rotated back 30 degrees.

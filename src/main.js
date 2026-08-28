@@ -50,6 +50,19 @@ function readSettings(metadata) {
   };
 }
 
+const SETTING_FIELDS = [
+  "enabled",
+  "hexesAcross",
+  "strokeColor",
+  "strokeWidth",
+  "offsetX",
+  "offsetY",
+];
+
+function sameSettings(a, b) {
+  return SETTING_FIELDS.every((field) => a[field] === b[field]);
+}
+
 const writeSettings = debounce(async () => {
   if (role !== "GM") return;
   try {
@@ -70,13 +83,15 @@ function update(patch) {
 
 /* ------------------------------------------------------------------ drawing */
 
-async function clearOverlay() {
+/** Our items, identified solely by our own namespaced metadata key. */
+async function getOverlayItems() {
+  return OBR.scene.items.getItems((item) => item.metadata?.[OVERLAY_KEY] === true);
+}
+
+async function deleteOverlayItems(items) {
   // Only ever delete items carrying our own metadata key.
-  const ours = await OBR.scene.items.getItems(
-    (item) => item.metadata?.[OVERLAY_KEY] === true,
-  );
-  if (ours.length > 0) {
-    await OBR.scene.items.deleteItems(ours.map((item) => item.id));
+  if (items.length > 0) {
+    await OBR.scene.items.deleteItems(items.map((item) => item.id));
   }
 }
 
@@ -104,6 +119,49 @@ async function resolveBounds() {
 let redrawing = false;
 let redrawQueued = false;
 
+// Everything the drawn output depends on. If this is unchanged and our items
+// are still on the scene there is nothing to do, so a redundant event costs two
+// cheap queries and draws nothing rather than restarting the draw cycle.
+let lastDrawnKey = null;
+
+function drawKey(bounds) {
+  return [
+    dpi,
+    gridType,
+    settings.hexesAcross,
+    settings.strokeColor,
+    settings.strokeWidth,
+    settings.offsetX,
+    settings.offsetY,
+    Math.round(bounds.min.x),
+    Math.round(bounds.min.y),
+    Math.round(bounds.max.x),
+    Math.round(bounds.max.y),
+  ].join("|");
+}
+
+async function drawOnce() {
+  const existing = await getOverlayItems();
+
+  if (!settings.enabled || !isHexGrid(gridType)) {
+    await deleteOverlayItems(existing);
+    lastDrawnKey = "off";
+    return;
+  }
+
+  const bounds = await resolveBounds();
+  const key = drawKey(bounds);
+  // Already on screen and still correct.
+  if (key === lastDrawnKey && existing.length > 0) return;
+
+  // Regenerate from scratch: delete our items, then rebuild. Simpler than
+  // diffing and quick enough at these counts.
+  await deleteOverlayItems(existing);
+  const items = buildOverlayItems({ dpi, gridType, bounds, settings });
+  if (items.length > 0) await OBR.scene.items.addItems(items);
+  lastDrawnKey = key;
+}
+
 async function redraw() {
   // Players must never write to the scene; they just see what the GM drew.
   if (role !== "GM" || !sceneReady) return;
@@ -115,14 +173,7 @@ async function redraw() {
   try {
     do {
       redrawQueued = false;
-      // Always regenerate from scratch: delete our items, then rebuild.
-      // Simpler than diffing and quick enough at these counts.
-      await clearOverlay();
-      if (settings.enabled && isHexGrid(gridType)) {
-        const bounds = await resolveBounds();
-        const items = buildOverlayItems({ dpi, gridType, bounds, settings });
-        if (items.length > 0) await OBR.scene.items.addItems(items);
-      }
+      await drawOnce();
     } while (redrawQueued);
   } catch (err) {
     console.error("[travel-day-hex] redraw failed", err);
@@ -221,6 +272,7 @@ function applyTheme(theme) {
   root.setProperty("--text", theme.text.primary);
   root.setProperty("--text-dim", theme.text.secondary);
   root.setProperty("--accent", theme.primary.main);
+  root.setProperty("--bg", theme.background.paper);
   const dark = theme.mode === "DARK";
   root.setProperty("--border", dark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.16)");
   root.setProperty("--warn-text", dark ? "#ffcc66" : "#8a5a00");
@@ -252,7 +304,12 @@ async function loadScene() {
   // scene's own grid lines so it reads as the dominant grid.
   if (!hadSettings) {
     settings.strokeWidth = clamp(Math.round((gridLineWidth || 2) * 3), 1, 30);
+    // Persist it, or the derived width is silently lost on the next read.
+    writeSettings();
   }
+
+  // New scene: different bounds and settings, so never trust the previous key.
+  lastDrawnKey = null;
 
   syncInputs();
   syncStatus();
@@ -280,16 +337,24 @@ async function init() {
   });
 
   OBR.scene.grid.onChange((grid) => {
+    gridLineWidth = grid.style?.lineWidth ?? gridLineWidth;
+    // Only react to the two properties the overlay is derived from. The host
+    // emits grid events for other reasons too, and redrawing on every one of
+    // them turns the overlay into a flicker loop.
+    if (grid.dpi === dpi && grid.type === gridType) return;
     // The GM changed DPI or grid type under us; rescale to match.
     dpi = grid.dpi;
     gridType = grid.type;
-    gridLineWidth = grid.style?.lineWidth ?? gridLineWidth;
     syncStatus();
     scheduleRedraw();
   });
 
   OBR.scene.onMetadataChange((metadata) => {
-    settings = readSettings(metadata);
+    const next = readSettings(metadata);
+    // Ignore the echo of our own write, and scene metadata belonging to any
+    // other extension. Either would otherwise queue a pointless redraw.
+    if (sameSettings(next, settings)) return;
+    settings = next;
     syncInputs();
     syncStatus();
     scheduleRedraw();

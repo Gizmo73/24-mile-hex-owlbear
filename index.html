@@ -5,10 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Travel Day Hex</title>
     <link rel="icon" href="./icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <style>
       /* Defaults for before OBR.theme reports in, and for a light host.
          applyTheme() overrides these at runtime inside Owlbear. */
       :root {
+        /* Owlbear renders each popover as a solid panel; a transparent body
+           makes this extension the odd one out. applyTheme() swaps this for
+           the host's own paper colour at runtime. */
+        --bg: #ffffff;
         --text: #14141c;
         --text-dim: rgba(0, 0, 0, 0.6);
         --accent: #7c5cff;
@@ -21,6 +31,7 @@
       }
       @media (prefers-color-scheme: dark) {
         :root {
+          --bg: #222639;
           --text: #ffffff;
           --text-dim: rgba(255, 255, 255, 0.7);
           --accent: #bb99ff;
@@ -32,12 +43,17 @@
       html, body {
         margin: 0;
         padding: 0;
-        background: transparent;
         color: var(--text);
-        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-        font-size: 13px;
+        font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
       }
-      body { padding: 12px 14px 16px; }
+      html { background: var(--bg); }
+      body {
+        background: var(--bg);
+        padding: 14px 16px 18px;
+        min-height: 100vh;
+      }
       .row {
         display: flex;
         align-items: center;
@@ -47,7 +63,7 @@
       }
       .row + .row { margin-top: 6px; }
       label { color: var(--text); user-select: none; }
-      .hint { color: var(--text-dim); font-size: 11px; margin-top: 1px; }
+      .hint { color: var(--text-dim); font-size: 12px; margin-top: 1px; }
       hr {
         border: none;
         border-top: 1px solid var(--border);
@@ -93,12 +109,16 @@
       .nudge span { color: var(--text-dim); width: 9px; }
       .nudge input[type="range"] { width: 104px; }
       button.reset {
-        background: var(--surface);
-        color: var(--text);
+        background: none;
+        color: var(--accent);
         border: 1px solid var(--border);
         border-radius: 4px;
-        padding: 3px 9px;
+        padding: 4px 11px;
         font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
         cursor: pointer;
       }
       button.reset:hover { background: var(--surface-hover); }
@@ -108,8 +128,8 @@
         border-radius: 4px;
         background: var(--surface);
         color: var(--text-dim);
-        font-size: 11px;
-        line-height: 1.4;
+        font-size: 12px;
+        line-height: 1.45;
       }
       #status.warn {
         background: var(--warn-bg);

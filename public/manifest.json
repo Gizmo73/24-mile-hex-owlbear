@@ -1,0 +1,15 @@
+{
+  "name": "Travel Day Hex",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "description": "Draws a bold 24-mile hex overlay on top of a scene's existing hex grid, so a GM can eyeball one day of travel at a glance.",
+  "author": "gizmo73",
+  "homepage_url": "https://github.com/Gizmo73/24-mile-hex-owlbear",
+  "action": {
+    "title": "Travel Day Hex",
+    "icon": "https://gizmo73.github.io/24-mile-hex-owlbear/icon.svg",
+    "popover": "https://gizmo73.github.io/24-mile-hex-owlbear/",
+    "height": 420,
+    "width": 320
+  }
+}

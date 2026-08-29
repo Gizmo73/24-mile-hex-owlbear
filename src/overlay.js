@@ -1,4 +1,4 @@
-import { buildCurve } from "@owlbear-rodeo/sdk";
+import { buildPath, Command } from "@owlbear-rodeo/sdk";
 
 /**
  * Single source of truth for our namespace. Every metadata key is derived
@@ -11,8 +11,18 @@ export const SETTINGS_KEY = `${ID}/settings`;
 export const HEXES_ACROSS_MIN = 2;
 export const HEXES_ACROSS_MAX = 50;
 
-/** Hard ceiling so a silly hexesAcross value can never flood a scene. */
-export const MAX_ITEMS = 6000;
+/**
+ * Hard ceiling on hexes. Hexes are batched into path items rather than drawn
+ * one item each, so this is bounded by the size of the scene document rather
+ * than by item count.
+ */
+export const MAX_HEXES = 30000;
+
+/**
+ * Hexes per path item. One Path holds many subpaths, so a scene needing tens of
+ * thousands of hexes costs tens of items instead of tens of thousands.
+ */
+const HEXES_PER_ITEM = 500;
 
 /**
  * Ceiling on loop iterations while scanning an extent. Guards against an
@@ -256,24 +266,47 @@ export function buildOverlayItems({ dpi, gridType, boxes, settings }) {
   const corners = hexCorners(bigRadius, gridType);
   const centres = overlayCentres(boxes, bigRadius, gridType, offset);
 
-  return centres.map((centre) =>
-    buildCurve()
-      .points(corners)
-      .position(centre)
-      .tension(0)
-      .closed(true)
-      .fillOpacity(0)
-      .strokeColor(settings.strokeColor)
-      .strokeWidth(settings.strokeWidth)
-      .strokeOpacity(1)
-      .layer("DRAWING")
-      .locked(true)
-      .disableHit(true)
-      .disableAutoZIndex(true)
-      .name("Travel Day Hex")
-      .metadata({ [OVERLAY_KEY]: true })
-      .build(),
-  );
+  // Two decimals is well under a pixel at any sane zoom, and keeps the command
+  // list from bloating the scene document.
+  const round = (n) => Math.round(n * 100) / 100;
+
+  const items = [];
+  for (let start = 0; start < centres.length; start += HEXES_PER_ITEM) {
+    const batch = centres.slice(start, start + HEXES_PER_ITEM);
+    const commands = [];
+    for (const centre of batch) {
+      commands.push([
+        Command.MOVE,
+        round(centre.x + corners[0].x),
+        round(centre.y + corners[0].y),
+      ]);
+      for (let i = 1; i < corners.length; i++) {
+        commands.push([
+          Command.LINE,
+          round(centre.x + corners[i].x),
+          round(centre.y + corners[i].y),
+        ]);
+      }
+      commands.push([Command.CLOSE]);
+    }
+    items.push(
+      buildPath()
+        .commands(commands)
+        .position({ x: 0, y: 0 })
+        .fillOpacity(0)
+        .strokeColor(settings.strokeColor)
+        .strokeWidth(settings.strokeWidth)
+        .strokeOpacity(1)
+        .layer("DRAWING")
+        .locked(true)
+        .disableHit(true)
+        .disableAutoZIndex(true)
+        .name("Travel Day Hex")
+        .metadata({ [OVERLAY_KEY]: true })
+        .build(),
+    );
+  }
+  return items;
 }
 
 /** Hexes the current settings would need for this extent. */

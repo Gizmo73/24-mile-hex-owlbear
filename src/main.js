@@ -8,7 +8,7 @@ import {
   buildOverlayItems,
   fallbackBounds,
   isHexGrid,
-  MAX_ITEMS,
+  MAX_HEXES,
   offsetToCentreOn,
   overlayHexCount,
 } from "./overlay.js";
@@ -221,7 +221,7 @@ async function drawOnce() {
   // Count before building. Drawing a partial overlay would silently cut off
   // whole rows, which reads as a bug rather than a limit.
   const needed = overlayHexCount({ dpi, gridType, boxes, settings });
-  if (needed > MAX_ITEMS) {
+  if (needed > MAX_HEXES) {
     await deleteOverlayItems(existing);
     overflowCount = needed;
     drawnCount = 0;
@@ -235,7 +235,9 @@ async function drawOnce() {
   const items = buildOverlayItems({ dpi, gridType, boxes, settings });
   if (items.length > 0) await OBR.scene.items.addItems(items);
   overflowCount = 0;
-  drawnCount = items.length;
+  // `needed` is hexes; `items` is the far smaller number of path items holding
+  // them, so report the hex count the GM actually cares about.
+  drawnCount = needed;
   lastDrawnKey = key;
 }
 
@@ -403,7 +405,7 @@ function syncStatus() {
     status.className = "warn";
     status.textContent = Number.isFinite(overflowCount)
       ? `This extent needs ${overflowCount.toLocaleString()} hexes, over the ` +
-        `${MAX_ITEMS.toLocaleString()} limit. Raise "hexes across", or limit ` +
+        `${MAX_HEXES.toLocaleString()} limit. Raise "hexes across", or limit ` +
         `the extent to fewer maps.`
       : "This extent is far too large to overlay. Limit it to the maps you need.";
     return;

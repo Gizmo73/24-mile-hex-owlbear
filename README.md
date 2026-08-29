@@ -54,9 +54,11 @@ Three ways to line the big hexes up with your map, in increasing order of precis
 ### Extent
 
 By default the overlay covers every map image in the scene, plus one hex of
-margin. If a scene holds several maps, that is their *combined* bounding box, so
-two maps in opposite corners produce a huge box with hexes drawn across the empty
-canvas between them.
+margin around each. Each map is covered individually rather than the scene
+getting one bounding box, so maps sitting far apart do not fill the empty canvas
+between them with hexes. Every map draws from the same lattice, so the big hexes
+still line up across maps, and overlapping maps share hexes rather than stacking
+duplicates.
 
 To cover only some of them, select the maps you want and click *Limit to selected
 maps*. The choice is stored as item ids, so the extent follows those maps if you

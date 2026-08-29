@@ -150,7 +150,8 @@ export function hexCorners(radius, gridType) {
  *
  * Returns false without visiting anything if the extent is too large to scan.
  */
-function forEachCentre(bounds, radius, gridType, offset, visit) {
+function forEachCentre(box, radius, gridType, offset, visit) {
+  const bounds = box;
   const margin = radius * 2;
   const min = { x: bounds.min.x - margin, y: bounds.min.y - margin };
   const max = { x: bounds.max.x + margin, y: bounds.max.y + margin };
@@ -193,30 +194,46 @@ function forEachCentre(bounds, radius, gridType, offset, visit) {
       const x = centre.x + offset.x;
       const y = centre.y + offset.y;
       if (x < min.x || x > max.x || y < min.y || y > max.y) continue;
-      visit(x, y);
+      visit(q, r, x, y);
     }
   }
   return true;
 }
 
-/** Every overlay hex centre for the extent. */
-export function overlayCentres(bounds, radius, gridType, offset) {
-  const centres = [];
-  forEachCentre(bounds, radius, gridType, offset, (x, y) => centres.push({ x, y }));
-  return centres;
+/**
+ * Every overlay hex centre covering the given boxes.
+ *
+ * Each map gets its own box rather than the whole scene getting one bounding
+ * box, so maps sitting far apart are covered individually instead of the empty
+ * canvas between them being filled in too. Every box draws from the same
+ * lattice, keyed by axial coordinate, so hexes still line up across maps and
+ * overlapping boxes share hexes rather than stacking duplicates.
+ */
+export function overlayCentres(boxes, radius, gridType, offset) {
+  const seen = new Map();
+  for (const box of boxes) {
+    forEachCentre(box, radius, gridType, offset, (q, r, x, y) => {
+      const key = `${q},${r}`;
+      if (!seen.has(key)) seen.set(key, { x, y });
+    });
+  }
+  return [...seen.values()];
 }
 
 /**
- * How many hexes the extent needs, without building any of them, so the caller
+ * How many hexes the boxes need, without building any of them, so the caller
  * can refuse an oversized overlay instead of silently drawing a truncated one.
  * Infinity when the extent is too large even to scan.
  */
-export function countOverlayCentres(bounds, radius, gridType, offset) {
-  let count = 0;
-  const scanned = forEachCentre(bounds, radius, gridType, offset, () => {
-    count += 1;
-  });
-  return scanned ? count : Infinity;
+export function countOverlayCentres(boxes, radius, gridType, offset) {
+  const seen = new Set();
+  for (const box of boxes) {
+    const scanned = forEachCentre(box, radius, gridType, offset, (q, r) => {
+      seen.add(`${q},${r}`);
+    });
+    if (!scanned) return Infinity;
+  }
+  return seen.size;
 }
 
 /**
@@ -228,7 +245,7 @@ export function countOverlayCentres(bounds, radius, gridType, offset) {
  * hex is centred on the scene origin so the big hexes at least sit centred on
  * small ones; the origin nudge shifts that alignment to taste.
  */
-export function buildOverlayItems({ dpi, gridType, bounds, settings }) {
+export function buildOverlayItems({ dpi, gridType, boxes, settings }) {
   const smallRadius = cellRadius(dpi);
   const bigRadius = smallRadius * settings.hexesAcross;
   const offset = {
@@ -237,7 +254,7 @@ export function buildOverlayItems({ dpi, gridType, bounds, settings }) {
   };
 
   const corners = hexCorners(bigRadius, gridType);
-  const centres = overlayCentres(bounds, bigRadius, gridType, offset);
+  const centres = overlayCentres(boxes, bigRadius, gridType, offset);
 
   return centres.map((centre) =>
     buildCurve()
@@ -260,10 +277,10 @@ export function buildOverlayItems({ dpi, gridType, bounds, settings }) {
 }
 
 /** Hexes the current settings would need for this extent. */
-export function overlayHexCount({ dpi, gridType, bounds, settings }) {
+export function overlayHexCount({ dpi, gridType, boxes, settings }) {
   const radius = cellRadius(dpi) * settings.hexesAcross;
   const offset = { x: settings.offsetX * dpi, y: settings.offsetY * dpi };
-  return countOverlayCentres(bounds, radius, gridType, offset);
+  return countOverlayCentres(boxes, radius, gridType, offset);
 }
 
 /** Fallback extent when the scene has no map images to measure. */

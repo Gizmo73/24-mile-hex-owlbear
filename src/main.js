@@ -118,23 +118,44 @@ function usableBounds(bounds) {
   );
 }
 
-async function resolveBounds() {
+/**
+ * Beyond this many items we stop measuring each one and fall back to their
+ * combined bounds, to avoid a burst of per-item calls.
+ */
+const MAX_EXTENT_ITEMS = 200;
+
+/**
+ * One box per item, so maps sitting far apart are each covered rather than the
+ * empty canvas between them being filled in as well.
+ */
+async function boxesForItems(items) {
+  if (items.length > MAX_EXTENT_ITEMS) {
+    const combined = await OBR.scene.items.getItemBounds(items.map((i) => i.id));
+    return usableBounds(combined) ? [combined] : [];
+  }
+  const measured = await Promise.all(
+    items.map((item) =>
+      OBR.scene.items.getItemBounds([item.id]).catch((err) => {
+        console.warn("[travel-day-hex] could not measure an extent item", err);
+        return null;
+      }),
+    ),
+  );
+  return measured.filter(usableBounds);
+}
+
+async function resolveExtentBoxes() {
   // A scene can hold several maps. When the GM has pinned a set of items, the
-  // overlay covers only those rather than the union of every map, which would
-  // otherwise stretch across the empty canvas between them.
+  // overlay covers only those.
   if (settings.boundsItemIds.length > 0) {
     const alive = (await OBR.scene.items.getItems(settings.boundsItemIds)).filter(
       (item) => item.metadata?.[OVERLAY_KEY] !== true,
     );
     if (alive.length > 0) {
-      try {
-        const bounds = await OBR.scene.items.getItemBounds(alive.map((i) => i.id));
-        if (usableBounds(bounds)) {
-          extentMissing = false;
-          return bounds;
-        }
-      } catch (err) {
-        console.warn("[travel-day-hex] could not measure the pinned extent", err);
+      const boxes = await boxesForItems(alive);
+      if (boxes.length > 0) {
+        extentMissing = false;
+        return boxes;
       }
     }
     // Pinned items were deleted; fall back rather than drawing nothing.
@@ -145,16 +166,12 @@ async function resolveBounds() {
 
   const mapItems = await OBR.scene.items.getItems((item) => item.layer === "MAP");
   if (mapItems.length > 0) {
-    try {
-      const bounds = await OBR.scene.items.getItemBounds(mapItems.map((i) => i.id));
-      if (usableBounds(bounds)) return bounds;
-    } catch (err) {
-      console.warn("[travel-day-hex] falling back to a fixed extent", err);
-    }
+    const boxes = await boxesForItems(mapItems);
+    if (boxes.length > 0) return boxes;
   }
   // No map images (or unmeasurable ones): cover a fixed 12x12 field of overlay
   // hexes around the origin rather than erroring.
-  return fallbackBounds(dpi, settings.hexesAcross);
+  return [fallbackBounds(dpi, settings.hexesAcross)];
 }
 
 let redrawing = false;
@@ -170,7 +187,7 @@ let overflowCount = 0;
 // Hexes actually on the scene, for the status line.
 let drawnCount = 0;
 
-function drawKey(bounds) {
+function drawKey(boxes) {
   return [
     dpi,
     gridType,
@@ -179,10 +196,9 @@ function drawKey(bounds) {
     settings.strokeWidth,
     settings.offsetX,
     settings.offsetY,
-    Math.round(bounds.min.x),
-    Math.round(bounds.min.y),
-    Math.round(bounds.max.x),
-    Math.round(bounds.max.y),
+    ...boxes.map((b) =>
+      [b.min.x, b.min.y, b.max.x, b.max.y].map(Math.round).join(","),
+    ),
   ].join("|");
 }
 
@@ -197,14 +213,14 @@ async function drawOnce() {
     return;
   }
 
-  const bounds = await resolveBounds();
-  const key = drawKey(bounds);
+  const boxes = await resolveExtentBoxes();
+  const key = drawKey(boxes);
   // Already settled: either drawn, or refused for being too large.
   if (key === lastDrawnKey && (existing.length > 0 || overflowCount > 0)) return;
 
   // Count before building. Drawing a partial overlay would silently cut off
   // whole rows, which reads as a bug rather than a limit.
-  const needed = overlayHexCount({ dpi, gridType, bounds, settings });
+  const needed = overlayHexCount({ dpi, gridType, boxes, settings });
   if (needed > MAX_ITEMS) {
     await deleteOverlayItems(existing);
     overflowCount = needed;
@@ -216,7 +232,7 @@ async function drawOnce() {
   // Regenerate from scratch: delete our items, then rebuild. Simpler than
   // diffing and quick enough at these counts.
   await deleteOverlayItems(existing);
-  const items = buildOverlayItems({ dpi, gridType, bounds, settings });
+  const items = buildOverlayItems({ dpi, gridType, boxes, settings });
   if (items.length > 0) await OBR.scene.items.addItems(items);
   overflowCount = 0;
   drawnCount = items.length;

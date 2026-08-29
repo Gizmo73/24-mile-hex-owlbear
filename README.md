@@ -64,6 +64,14 @@ move or resize them. *All maps* returns to the default. If the pinned items are
 later deleted the overlay falls back to all maps and says so, rather than
 silently drawing nothing.
 
+### Size limit
+
+The overlay refuses to draw more than 6,000 hexes and says how many the current
+extent needs. It will not draw a partial overlay: because hexes are generated row
+by row, a partial one would cut off cleanly along a horizontal line and read as a
+bug rather than a limit. If you hit it, raise *hexes across* or limit the extent
+to fewer maps. The status line shows the hex count whenever the overlay is on.
+
 ## Notes
 
 - **Overlay edges cut through small hexes.** That is unavoidable geometry, not a bug.

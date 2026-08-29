@@ -12,7 +12,13 @@ export const HEXES_ACROSS_MIN = 2;
 export const HEXES_ACROSS_MAX = 50;
 
 /** Hard ceiling so a silly hexesAcross value can never flood a scene. */
-const MAX_ITEMS = 4000;
+export const MAX_ITEMS = 6000;
+
+/**
+ * Ceiling on loop iterations while scanning an extent. Guards against an
+ * absurd extent spinning for a long time before we can reject it.
+ */
+const MAX_SCAN = 5_000_000;
 
 export const DEFAULTS = {
   enabled: false,
@@ -138,11 +144,13 @@ export function hexCorners(radius, gridType) {
 }
 
 /**
- * Every overlay hex whose centre lands inside `bounds` grown by one hex of
+ * Walk every overlay hex whose centre lands inside `bounds` grown by one hex of
  * margin, so the overlay runs past the edge of the map rather than stopping
  * short of it.
+ *
+ * Returns false without visiting anything if the extent is too large to scan.
  */
-export function overlayCentres(bounds, radius, gridType, offset) {
+function forEachCentre(bounds, radius, gridType, offset, visit) {
   const margin = radius * 2;
   const min = { x: bounds.min.x - margin, y: bounds.min.y - margin };
   const max = { x: bounds.max.x + margin, y: bounds.max.y + margin };
@@ -173,18 +181,42 @@ export function overlayCentres(bounds, radius, gridType, offset) {
     rMax = Math.max(rMax, r);
   }
 
-  const centres = [];
-  for (let r = Math.floor(rMin) - 2; r <= Math.ceil(rMax) + 2; r++) {
-    for (let q = Math.floor(qMin) - 2; q <= Math.ceil(qMax) + 2; q++) {
+  const rFrom = Math.floor(rMin) - 2;
+  const rTo = Math.ceil(rMax) + 2;
+  const qFrom = Math.floor(qMin) - 2;
+  const qTo = Math.ceil(qMax) + 2;
+  if ((rTo - rFrom + 1) * (qTo - qFrom + 1) > MAX_SCAN) return false;
+
+  for (let r = rFrom; r <= rTo; r++) {
+    for (let q = qFrom; q <= qTo; q++) {
       const centre = axialToPixel(q, r, radius, gridType);
       const x = centre.x + offset.x;
       const y = centre.y + offset.y;
       if (x < min.x || x > max.x || y < min.y || y > max.y) continue;
-      centres.push({ x, y });
-      if (centres.length >= MAX_ITEMS) return centres;
+      visit(x, y);
     }
   }
+  return true;
+}
+
+/** Every overlay hex centre for the extent. */
+export function overlayCentres(bounds, radius, gridType, offset) {
+  const centres = [];
+  forEachCentre(bounds, radius, gridType, offset, (x, y) => centres.push({ x, y }));
   return centres;
+}
+
+/**
+ * How many hexes the extent needs, without building any of them, so the caller
+ * can refuse an oversized overlay instead of silently drawing a truncated one.
+ * Infinity when the extent is too large even to scan.
+ */
+export function countOverlayCentres(bounds, radius, gridType, offset) {
+  let count = 0;
+  const scanned = forEachCentre(bounds, radius, gridType, offset, () => {
+    count += 1;
+  });
+  return scanned ? count : Infinity;
 }
 
 /**
@@ -225,6 +257,13 @@ export function buildOverlayItems({ dpi, gridType, bounds, settings }) {
       .metadata({ [OVERLAY_KEY]: true })
       .build(),
   );
+}
+
+/** Hexes the current settings would need for this extent. */
+export function overlayHexCount({ dpi, gridType, bounds, settings }) {
+  const radius = cellRadius(dpi) * settings.hexesAcross;
+  const offset = { x: settings.offsetX * dpi, y: settings.offsetY * dpi };
+  return countOverlayCentres(bounds, radius, gridType, offset);
 }
 
 /** Fallback extent when the scene has no map images to measure. */

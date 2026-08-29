@@ -8,7 +8,9 @@ import {
   buildOverlayItems,
   fallbackBounds,
   isHexGrid,
+  MAX_ITEMS,
   offsetToCentreOn,
+  overlayHexCount,
 } from "./overlay.js";
 
 const el = (id) => document.getElementById(id);
@@ -163,6 +165,11 @@ let redrawQueued = false;
 // cheap queries and draws nothing rather than restarting the draw cycle.
 let lastDrawnKey = null;
 
+// Hexes the current extent needs when that is more than we will draw, else 0.
+let overflowCount = 0;
+// Hexes actually on the scene, for the status line.
+let drawnCount = 0;
+
 function drawKey(bounds) {
   return [
     dpi,
@@ -184,20 +191,35 @@ async function drawOnce() {
 
   if (!settings.enabled || !isHexGrid(gridType)) {
     await deleteOverlayItems(existing);
+    overflowCount = 0;
+    drawnCount = 0;
     lastDrawnKey = "off";
     return;
   }
 
   const bounds = await resolveBounds();
   const key = drawKey(bounds);
-  // Already on screen and still correct.
-  if (key === lastDrawnKey && existing.length > 0) return;
+  // Already settled: either drawn, or refused for being too large.
+  if (key === lastDrawnKey && (existing.length > 0 || overflowCount > 0)) return;
+
+  // Count before building. Drawing a partial overlay would silently cut off
+  // whole rows, which reads as a bug rather than a limit.
+  const needed = overlayHexCount({ dpi, gridType, bounds, settings });
+  if (needed > MAX_ITEMS) {
+    await deleteOverlayItems(existing);
+    overflowCount = needed;
+    drawnCount = 0;
+    lastDrawnKey = key;
+    return;
+  }
 
   // Regenerate from scratch: delete our items, then rebuild. Simpler than
   // diffing and quick enough at these counts.
   await deleteOverlayItems(existing);
   const items = buildOverlayItems({ dpi, gridType, bounds, settings });
   if (items.length > 0) await OBR.scene.items.addItems(items);
+  overflowCount = 0;
+  drawnCount = items.length;
   lastDrawnKey = key;
 }
 
@@ -361,6 +383,15 @@ function syncStatus() {
     status.textContent = "You can see the overlay, but only the GM can change it.";
     return;
   }
+  if (overflowCount > 0) {
+    status.className = "warn";
+    status.textContent = Number.isFinite(overflowCount)
+      ? `This extent needs ${overflowCount.toLocaleString()} hexes, over the ` +
+        `${MAX_ITEMS.toLocaleString()} limit. Raise "hexes across", or limit ` +
+        `the extent to fewer maps.`
+      : "This extent is far too large to overlay. Limit it to the maps you need.";
+    return;
+  }
   if (extentMissing) {
     status.className = "warn";
     status.textContent =
@@ -370,7 +401,7 @@ function syncStatus() {
   status.className = "";
   const across = settings.hexesAcross;
   status.textContent = settings.enabled
-    ? `Overlay on: ${across} hexes across, ${gridType === "HEX_VERTICAL" ? "pointy-top" : "flat-top"} grid.`
+    ? `Overlay on: ${across} hexes across, ${drawnCount.toLocaleString()} hexes drawn.`
     : "Overlay off.";
 }
 
